@@ -15,6 +15,26 @@ function sseResponse(text: string): Response {
 }
 
 describe('HermesClient', () => {
+  it('calls the browser fetch implementation with the Window/global context', async () => {
+    const originalFetch = globalThis.fetch
+    let receivedContext: unknown
+    globalThis.fetch = function (this: typeof globalThis) {
+      receivedContext = this
+      return Promise.resolve(Response.json({ status: 'ok' }))
+    } as typeof fetch
+
+    try {
+      const client = new HermesClient({
+        baseUrl: 'https://h.example',
+        apiKey: ['test', 'token'].join('-'),
+      })
+      await expect(client.health()).resolves.toBe(true)
+      expect(receivedContext).toBe(globalThis)
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+  })
+
   it('sends bearer auth and starts a run against a selected session', async () => {
     const seen: { url?: string; auth?: string; device?: string; body?: string; redirect?: RequestRedirect } = {}
     const client = new HermesClient({ baseUrl: 'https://h.example', apiKey: 'secret', deviceBindingId: 'g2_abc' }, mockFetch((url, init) => {

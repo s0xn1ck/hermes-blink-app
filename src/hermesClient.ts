@@ -69,10 +69,15 @@ const BLINK_SESSION_TITLE_PREFIX = 'Hermes Blink /'
 const DEFAULT_BLINK_SESSION_TITLE = 'Hermes Blink / G2'
 const BLINK_MODEL_NAME = 'hermes-blink'
 
+function browserFetch(input: URL | RequestInfo, init?: RequestInit): ReturnType<typeof fetch> {
+  // WebKit's Window.fetch brand-checks `this`; calling a stored unbound method fails.
+  return globalThis.fetch(input, init)
+}
+
 export class HermesClient {
   constructor(
     private readonly config: HermesConfig,
-    private readonly fetchImpl: typeof fetch = fetch,
+    private readonly fetchImpl: typeof fetch = browserFetch,
     private readonly timeouts = { healthMs: 8_000, listMs: 10_000, chatMs: 60_000, runMs: 120_000 },
   ) {}
 

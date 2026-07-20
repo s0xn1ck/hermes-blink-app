@@ -9,6 +9,12 @@ function readProject(relativePath: string): string {
 }
 
 describe('direct self-hosted guardrails', () => {
+  it('keeps the package and Even manifest versions aligned', () => {
+    const manifest = JSON.parse(readProject('app.json'))
+    const packageJson = JSON.parse(readProject('package.json'))
+    expect(manifest.version).toBe(packageJson.version)
+  })
+
   it('uses only user-entered HTTPS Hermes credentials and no shared relay', () => {
     const app = readProject('src/app.ts')
     expect(app).toContain('Hermes Gateway URL')
