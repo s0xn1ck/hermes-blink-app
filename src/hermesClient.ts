@@ -203,7 +203,7 @@ export class HermesClient {
       headers: { 'Content-Type': 'audio/wav' },
     }, this.timeouts.chatMs)
     const body = await this.readJson(response, this.timeouts.chatMs)
-    const text = String(body?.text ?? '').trim()
+    const text = String(body?.text ?? '').trim().slice(0, 4_000)
     if (!text) throw new HermesApiError('No speech was detected. Tap and try again.')
     return text
   }

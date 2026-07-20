@@ -108,8 +108,9 @@ export async function createG2Bridge(): Promise<G2Bridge> {
     },
     onAudio(handler) {
       bridge.onEvenHubEvent((event: any) => {
-        const pcm = event.audioEvent?.audioPcm
-        if (pcm instanceof Uint8Array && pcm.byteLength > 0) handler(pcm)
+        const audio = event.audioEvent
+        const pcm = audio?.audioPcm
+        if (audio?.source === AudioInputSource.Glasses && pcm instanceof Uint8Array && pcm.byteLength > 0) handler(pcm.slice())
       })
     },
     async startMicrophone() {

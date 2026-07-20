@@ -95,7 +95,10 @@ export class G2HermesApp {
     }
     if (event === 'swipeDown') await this.nextPage()
     if (event === 'swipeUp') await this.previousPage()
-    if (event === 'doubleTap') await this.bridge.exit()
+    if (event === 'doubleTap') {
+      if (this.voiceRecording) await this.cancelVoice()
+      await this.bridge.exit()
+    }
   }
 
   private renderConfigForm(error = ''): void {
@@ -452,8 +455,13 @@ export class G2HermesApp {
     if (!this.client || !this.session) throw new Error('Connect Hermes before recording.')
     this.voiceChunks = []
     this.voiceBytes = 0
-    await this.bridge.startMicrophone()
     this.voiceRecording = true
+    try {
+      await this.bridge.startMicrophone()
+    } catch (error) {
+      this.voiceRecording = false
+      throw error
+    }
     this.voiceTimeout = globalThis.setTimeout(() => {
       void this.withUiErrors(() => this.stopVoiceAndSend())
     }, 25_000)
@@ -468,6 +476,7 @@ export class G2HermesApp {
     if (this.voiceTimeout !== null) globalThis.clearTimeout(this.voiceTimeout)
     this.voiceTimeout = null
     await this.bridge.stopMicrophone()
+    this.renderCurrentView()
     const wav = pcm16ChunksToWav(this.voiceChunks)
     this.voiceChunks = []
     this.voiceBytes = 0
@@ -477,6 +486,16 @@ export class G2HermesApp {
     this.setStatus(`You said: ${transcript}`)
     await this.show('You said', transcript, 0)
     await this.sendPrompt(transcript)
+  }
+
+  private async cancelVoice(): Promise<void> {
+    if (!this.voiceRecording) return
+    this.voiceRecording = false
+    if (this.voiceTimeout !== null) globalThis.clearTimeout(this.voiceTimeout)
+    this.voiceTimeout = null
+    this.voiceChunks = []
+    this.voiceBytes = 0
+    await this.bridge.stopMicrophone()
   }
 
   private wireRunControls(): void {
@@ -753,6 +772,7 @@ export class G2HermesApp {
     })
     this.root.querySelector<HTMLButtonElement>('#reset-config')?.addEventListener('click', async () => {
       await this.withUiErrors(async () => {
+        await this.cancelVoice()
         clearConfig(window.localStorage, window.sessionStorage)
         clearSettings()
         this.client = null
