@@ -33,6 +33,15 @@ npm test -- --run
 npm run build
 ```
 
+For browser-only UI review without G2 hardware:
+
+```bash
+npm run dev
+# open http://localhost:5173/?preview=1
+```
+
+Preview mode is enabled only by the explicit query parameter and substitutes a no-op glasses bridge; normal builds continue to require the Even bridge.
+
 ## Package
 
 A fixed-origin private build:

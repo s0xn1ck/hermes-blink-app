@@ -18,6 +18,9 @@ button, input, textarea, select { font: inherit; }
 .card { background: #fff; border-radius: 18px; padding: 24px 28px; margin: 18px 0; box-shadow: 0 1px 0 #ddd; }
 .card h2 { margin: 0 0 16px; font-size: 1.55rem; font-weight: 500; }
 .card p { color: #6b6b6b; line-height: 1.35; }
+.eyebrow { margin: 0 0 8px; color: #777; font-size: .78rem; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.setup-steps { margin: 18px 0 0; padding-left: 24px; color: #555; line-height: 1.5; }
+.setup-steps li + li { margin-top: 8px; }
 button { border: 0; border-radius: 12px; padding: 14px 16px; background: #eee; color: #111; cursor: pointer; }
 button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-visible { outline: 3px solid #111; outline-offset: 3px; }
 button:disabled { opacity: .45; }
@@ -26,7 +29,7 @@ textarea { min-height: 120px; resize: vertical; }
 label { display: block; color: #777; margin: 16px 0; }
 .error, .banner { background: #f8d7da; color: #e13b3f; padding: 16px 20px; border-radius: 12px; white-space: pre-wrap; }
 .help-card button, .connect-card button[type='submit'] { width: 100%; font-size: 1.45rem; }
-.status-pill { width: 100%; display: flex; justify-content: space-between; align-items: center; background: #f0f0f0; color: #7a7a7a; font-size: 1.2rem; }
+.status-pill { width: 100%; box-sizing: border-box; display: flex; justify-content: space-between; align-items: center; background: #f0f0f0; color: #7a7a7a; font-size: 1.2rem; padding: 14px 16px; border-radius: 12px; }
 .status-pill.connected { color: #111; }
 .status-pill.connected::first-letter { color: #28b35a; }
 .status-pill.disconnected::first-letter { color: #aaa; }
@@ -34,7 +37,7 @@ label { display: block; color: #777; margin: 16px 0; }
 .danger { background: #f8d7da; color: #b22; }
 .muted { color: #777; }
 .lens-card p:first-of-type { color: #111; background: #f3f3f3; padding: 16px; border-radius: 12px; }
-.composer { position: fixed; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 64px 1fr 116px; gap: 12px; padding: 14px 20px 18px; background: #fff; box-shadow: 0 -2px 10px #0001; }
+.composer { position: fixed; z-index: 20; left: 50%; bottom: 0; width: min(720px, calc(100% - 24px)); box-sizing: border-box; transform: translateX(-50%); display: grid; grid-template-columns: 64px 1fr 116px; gap: 12px; padding: 14px 20px 18px; background: #fff; border-radius: 18px 18px 0 0; box-shadow: 0 -2px 14px #0002; }
 .composer input { margin: 0; }
 .composer button { margin: 0; font-weight: 700; }
 .status-log { white-space: pre-wrap; background: #fff; color: #555; padding: 12px 16px; border-radius: 10px; min-height: 22px; }
@@ -78,10 +81,13 @@ label { display: block; color: #777; margin: 16px 0; }
 @media (max-width: 560px) {
   :root { font-size: 16px; }
   .app-shell { padding: 14px 12px 92px; }
+  .app-header { flex-wrap: wrap; gap: 12px; margin-bottom: 18px; }
+  .identity { gap: 12px; }
   .identity h1 { font-size: 1.6rem; }
   .logo { width: 58px; height: 58px; }
-  .top-nav { gap: 8px; }
-  .top-nav button { width: 52px; height: 52px; }
+  .top-nav { width: 100%; gap: 8px; }
+  .top-nav button { flex: 1; width: auto; height: 50px; }
+  .card { padding: 20px; }
   .settings-tabs { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .settings-tabs button { font-size: .86rem; }
   .setting-row { grid-template-columns: 42px 1fr 120px; padding: 14px 16px; }

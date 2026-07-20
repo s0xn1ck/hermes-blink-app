@@ -1,11 +1,13 @@
 import './style.css'
 import { G2HermesApp } from './app'
-import { createG2Bridge } from './g2Bridge'
+import { createG2Bridge, createPreviewBridge } from './g2Bridge'
 
 const root = document.querySelector<HTMLElement>('#app')
 if (!root) throw new Error('#app not found')
 
-createG2Bridge()
+const preview = new URLSearchParams(window.location.search).get('preview') === '1'
+
+Promise.resolve(preview ? createPreviewBridge() : createG2Bridge())
   .then((bridge) => new G2HermesApp(bridge, root).start())
   .catch((error) => {
     const pre = document.createElement('pre')

@@ -90,21 +90,24 @@ export class G2HermesApp {
     const addressField = `<label>Hermes Gateway URL <input name="baseUrl" type="url" inputmode="url" autocomplete="url" placeholder="https://hermes.example.com" value="${escapeHtml(baseUrl)}" required /></label>`
     this.root.innerHTML = this.shell(`
       <section class="card help-card">
-        <h2>Need help configuring Hermes Blink?</h2>
-        <p>Connect directly to your own HTTPS Hermes Gateway. Hermes Blink does not operate or share a server.</p>
-        <button type="button" id="setup-help">Open setup notes</button>
+        <p class="eyebrow">Private self-hosted connection</p>
+        <h2>Connect Hermes Blink</h2>
+        <p>Use the same private bridge URL and disposable token configured for Even’s Add Agent.</p>
+        <ol class="setup-steps">
+          <li>Keep Hermes bound to localhost.</li>
+          <li>Expose only Hermes Blink Bridge over private HTTPS.</li>
+          <li>Paste that bridge URL and its scoped token below.</li>
+        </ol>
       </section>
       <section class="card connect-card">
-        <button class="status-pill disconnected" type="button">● Disconnected · tap to connect <span>⌃</span></button>
+        <div class="status-pill disconnected" role="status">● Not connected</div>
         ${error ? `<p class="error">${escapeHtml(error)}</p>` : ''}
-        <p>Enter the HTTPS address and scoped token for your own Hermes setup.</p>
         <form id="config-form">
           ${addressField}
           <label>Access token <input name="apiKey" type="password" autocomplete="off" placeholder="Scoped Hermes Blink token" required /></label>
-          <button type="submit">Connect</button>
+          <button type="submit">Connect securely</button>
         </form>
       </section>
-      ${this.renderComposer()}
       ${this.renderDebugPanel()}
     `, 'home')
 
@@ -118,11 +121,7 @@ export class G2HermesApp {
       }
       await this.connectDirect(candidate).catch((err) => this.renderConfigForm(String(err.message ?? err)))
     })
-    this.root.querySelector<HTMLButtonElement>('#setup-help')?.addEventListener('click', () => {
-      this.setStatus('Setup: expose a narrow HTTPS Hermes Gateway with CORS for the Even app, then enter its URL and scoped token.')
-    })
     this.wireNavigation()
-    this.wireComposer()
     this.wireDebugEvents()
   }
 

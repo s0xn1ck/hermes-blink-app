@@ -16,6 +16,19 @@ export type G2Bridge = {
   exit(): Promise<void>
 }
 
+export function createPreviewBridge(onText: (content: string) => void = console.debug): G2Bridge {
+  return {
+    async showText(content: string) {
+      onText(content)
+    },
+    async deviceBindingId() {
+      return 'preview-device'
+    },
+    onEvent() {},
+    async exit() {},
+  }
+}
+
 export async function createG2Bridge(): Promise<G2Bridge> {
   const bridge = await waitForEvenAppBridge()
   const containerID = 1
