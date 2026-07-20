@@ -1,0 +1,16 @@
+node_modules/
+dist/
+.tmp/
+.pytest_cache/
+.ruff_cache/
+__pycache__/
+*.py[cod]
+private_gateway/.venv/
+.venv/
+app.dev.json
+*.ehpk
+.DS_Store
+.env
+.env.*
+gateway.env
+*.log
