@@ -15,6 +15,17 @@ function sseResponse(text: string): Response {
 }
 
 describe('HermesClient', () => {
+  it('uploads a WAV recording to the narrow transcription endpoint', async () => {
+    const seen: { url?: string; type?: string } = {}
+    const client = new HermesClient({ baseUrl: 'https://h.example', apiKey: ['test', 'token'].join('-') }, mockFetch((url, init) => {
+      seen.url = url
+      seen.type = (init?.headers as Record<string, string>)['Content-Type']
+      return Response.json({ text: 'spoken prompt' })
+    }))
+    await expect(client.transcribeAudio(new Blob(['wav'], { type: 'audio/wav' }))).resolves.toBe('spoken prompt')
+    expect(seen).toEqual({ url: 'https://h.example/v1/audio/transcriptions', type: 'audio/wav' })
+  })
+
   it('calls the browser fetch implementation with the Window/global context', async () => {
     const originalFetch = globalThis.fetch
     let receivedContext: unknown

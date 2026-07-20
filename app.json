@@ -2,7 +2,7 @@
   "package_id": "com.s0xn1ck.hermesblink",
   "edition": "202601",
   "name": "Hermes Blink",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "min_app_version": "2.0.0",
   "min_sdk_version": "0.0.12",
   "entrypoint": "index.html",
@@ -11,6 +11,10 @@
       "name": "network",
       "desc": "Connects to the user's own HTTPS Hermes Blink gateway. The endpoint and disposable credential are entered at runtime.",
       "whitelist": []
+    },
+    {
+      "name": "g2-microphone",
+      "desc": "Captures speech from the G2 microphones only while the user explicitly starts a voice prompt. Audio is sent to the user's own private Hermes Blink bridge for transcription."
     }
   ],
   "supported_languages": ["en"]

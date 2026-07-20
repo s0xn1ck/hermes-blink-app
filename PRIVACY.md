@@ -1,6 +1,6 @@
 # Hermes Blink Privacy Policy
 
-Last updated: 2026-07-12
+Last updated: 2026-07-21
 
 Hermes Blink is an Even Hub client that connects directly to an HTTPS Hermes Gateway selected and operated by the user. Hermes Blink does not operate a shared relay, shared Hermes instance, or hosted user backend.
 
@@ -11,6 +11,8 @@ Hermes Blink may process:
 - the user’s Gateway origin;
 - a bearer credential supplied by the user;
 - text prompts;
+- short voice recordings captured from the G2 microphones after an explicit tap;
+- transcripts produced by the user's private Hermes Blink bridge;
 - Hermes responses, run state, tool-status summaries, and approval requests;
 - a one-way identifier derived from available G2 device information;
 - selected session identifiers and minimal connection diagnostics.
@@ -19,7 +21,7 @@ The raw device serial is used locally to derive a pseudonymous identifier and is
 
 ## Purpose and data flow
 
-Data is used only to authenticate to the user-selected Gateway, manage sessions/runs, and display Hermes output on the phone and glasses. Prompts and responses travel directly between the Even WebView and the user’s Gateway. Their Gateway/Hermes operator controls server-side collection, retention, sharing, and deletion.
+Data is used only to authenticate to the user-selected Gateway, transcribe explicitly initiated G2 speech, manage sessions/runs, and display Hermes output on the phone and glasses. Voice audio, prompts, and responses travel directly between the Even WebView and the user’s Gateway. The bridge uses Hermes' configured speech-to-text provider. The Gateway/Hermes operator controls server-side providers, collection, retention, sharing, and deletion.
 
 ## Local storage
 
@@ -35,7 +37,7 @@ Hermes Blink does not sell user data and has no shared backend receiving prompts
 
 ## Permissions
 
-The app requests network access only. The source manifest uses an empty whitelist for private testing of the runtime-configured endpoint pattern, while fixed-origin packages whitelist one explicit Gateway origin. Even Hub's published rules and released BYO-backend behavior currently conflict. Hermes Blink does not request microphone, camera, album, location, or IMU permissions.
+The app requests network access and `g2-microphone` access. Microphone capture starts only after the user taps to speak, stops after a second tap or a 25-second limit, and is used to create one voice prompt. The app does not request the phone microphone, camera, album, location, or IMU permissions. The source manifest uses an empty network whitelist for private testing of the runtime-configured endpoint pattern, while fixed-origin packages whitelist one explicit Gateway origin.
 
 ## Security and controls
 

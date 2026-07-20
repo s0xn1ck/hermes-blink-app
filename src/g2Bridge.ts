@@ -1,5 +1,6 @@
 import {
   CreateStartUpPageContainer,
+  AudioInputSource,
   OsEventTypeList,
   TextContainerProperty,
   TextContainerUpgrade,
@@ -13,6 +14,9 @@ export type G2Bridge = {
   showText(content: string): Promise<void>
   deviceBindingId(): Promise<string>
   onEvent(handler: (event: G2Event) => void | Promise<void>): void
+  onAudio(handler: (pcm: Uint8Array) => void): void
+  startMicrophone(): Promise<void>
+  stopMicrophone(): Promise<void>
   exit(): Promise<void>
 }
 
@@ -25,6 +29,9 @@ export function createPreviewBridge(onText: (content: string) => void = console.
       return 'preview-device'
     },
     onEvent() {},
+    onAudio() {},
+    async startMicrophone() { throw new Error('G2 microphone is unavailable in browser preview.') },
+    async stopMicrophone() {},
     async exit() {},
   }
 }
@@ -98,6 +105,20 @@ export async function createG2Bridge(): Promise<G2Bridge> {
             break
         }
       })
+    },
+    onAudio(handler) {
+      bridge.onEvenHubEvent((event: any) => {
+        const pcm = event.audioEvent?.audioPcm
+        if (pcm instanceof Uint8Array && pcm.byteLength > 0) handler(pcm)
+      })
+    },
+    async startMicrophone() {
+      const ok = await bridge.audioControl(true, AudioInputSource.Glasses)
+      if (!ok) throw new Error('Could not start the G2 microphones. Check microphone permission.')
+    },
+    async stopMicrophone() {
+      const ok = await bridge.audioControl(false)
+      if (!ok) throw new Error('Could not stop the G2 microphones.')
     },
     async exit() {
       const ok = await bridge.shutDownPageContainer(1)

@@ -11,7 +11,8 @@ Hermes Blink is independent and is not affiliated with or endorsed by Even Reali
 ## What it does
 
 - Lists, searches, creates and selects isolated Blink sessions
-- Starts Hermes Runs and renders streamed replies
+- Captures explicit tap-to-talk prompts from the G2 microphones
+- Transcribes voice through the user's private bridge and starts Hermes Runs
 - Reconciles interrupted streams through bounded status polling
 - Supports stop, approve-once and deny
 - Paginates and throttles output for the G2 display
@@ -109,9 +110,10 @@ The source manifest intentionally uses an empty network whitelist to test runtim
 1. Deploy the bridge on loopback behind private HTTPS.
 2. Install the exact Draft/Private/Test `.ehpk`.
 3. Enter the bridge origin and newly generated disposable token.
-4. Verify sessions and `Reply with exactly G2 READY`.
-5. Test streaming, pagination, stop, approve once and deny.
-6. Test network interruption, phone lock/unlock and reconnection.
+4. Grant the G2 microphone permission, tap once to speak, then tap again to send.
+5. Verify the transcript and a `Reply with exactly G2 READY` voice prompt.
+6. Test streaming, pagination, stop, approve once and deny.
+7. Test network interruption, phone lock/unlock and reconnection.
 
 See [PRIVACY.md](PRIVACY.md), [SECURITY.md](SECURITY.md) and the [bridge deployment guide](https://github.com/s0xn1ck/hermes-blink-bridge/blob/main/deployment.md).
 

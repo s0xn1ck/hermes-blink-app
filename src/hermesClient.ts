@@ -196,6 +196,18 @@ export class HermesClient {
     return current
   }
 
+  async transcribeAudio(wav: Blob): Promise<string> {
+    const response = await this.request('/v1/audio/transcriptions', {
+      method: 'POST',
+      body: wav,
+      headers: { 'Content-Type': 'audio/wav' },
+    }, this.timeouts.chatMs)
+    const body = await this.readJson(response, this.timeouts.chatMs)
+    const text = String(body?.text ?? '').trim()
+    if (!text) throw new HermesApiError('No speech was detected. Tap and try again.')
+    return text
+  }
+
   async stopRun(runId: string): Promise<void> {
     await this.request(`/v1/runs/${encodeURIComponent(runId)}/stop`, { method: 'POST' }, this.timeouts.listMs)
   }

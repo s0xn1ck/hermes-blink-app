@@ -15,6 +15,8 @@ import { buildDebugPayload } from './diagnostics'
 import { buildBlinkPrompt } from './prompt'
 import { chunkForG2, formatLensPage, tailForPhone } from './text'
 import type { G2Bridge, G2Event } from './g2Bridge'
+import manifest from '../app.json'
+import { pcm16ChunksToWav } from './audio'
 
 type DebugState = {
   bridge: string
@@ -53,6 +55,10 @@ export class G2HermesApp {
   private view: AppView = 'home'
   private settingsTab: SettingsTab = 'display'
   private settings: BlinkSettings = loadSettings()
+  private voiceRecording = false
+  private voiceChunks: Uint8Array[] = []
+  private voiceBytes = 0
+  private voiceTimeout: ReturnType<typeof globalThis.setTimeout> | null = null
   private debug: DebugState = {
     bridge: 'ready',
     hermes: 'not connected',
@@ -65,6 +71,7 @@ export class G2HermesApp {
 
   async start(): Promise<void> {
     this.bridge.onEvent((event) => this.withUiErrors(() => this.handleG2Event(event)))
+    this.bridge.onAudio((pcm) => this.captureAudio(pcm))
     this.updateDebug({ bridge: 'ready' })
 
     const config = loadConfig(window.localStorage, window.sessionStorage)
@@ -82,7 +89,11 @@ export class G2HermesApp {
 
   private async handleG2Event(event: G2Event): Promise<void> {
     this.updateDebug({ lastEvent: event })
-    if (event === 'tap' || event === 'swipeDown') await this.nextPage()
+    if (event === 'tap' && this.client && this.session && !['queued', 'running', 'waiting_for_approval', 'stopping'].includes(this.runStatus)) {
+      await this.toggleVoice()
+      return
+    }
+    if (event === 'swipeDown') await this.nextPage()
     if (event === 'swipeUp') await this.previousPage()
     if (event === 'doubleTap') await this.bridge.exit()
   }
@@ -159,7 +170,7 @@ export class G2HermesApp {
     this.persistSession(this.session.id)
     this.view = 'home'
     this.renderCurrentView()
-    await this.show('Connected', `Session: ${this.session.title ?? this.session.id}\n\nType a prompt on the phone. Tap glasses to page replies.`, 0)
+    await this.show('Connected', `Session: ${this.session.title ?? this.session.id}\n\nTap once to speak. Tap again to send. Swipe to page replies.`, 0)
   }
 
   private renderCurrentView(): void {
@@ -317,19 +328,17 @@ export class G2HermesApp {
     modal.innerHTML = `
       <section class="info-modal" role="dialog" aria-modal="true" aria-label="Hermes Blink info">
         <header class="modal-header">
-          <h2><span>ⓘ</span> Info</h2>
-          <span class="version">v0.1.0</span>
+          <div class="info-heading"><span class="info-mark">☤</span><div><p>Hermes client for G2</p><h2>Hermes Blink</h2></div></div>
+          <span class="version">v${escapeHtml(manifest.version)}</span>
           <button class="modal-close" type="button" aria-label="Close">×</button>
         </header>
-        <h3>Settings help</h3>
-        ${infoRow('☷', 'Tap any setting name/icon to see what it does. Display settings affect how replies page on the glasses.')}
-        <h3>Report a bug</h3>
-        ${infoRow('🐞', 'Open Debug, copy the sanitized payload, and include it in a GitHub issue. It never includes your Gateway token.')}
-        <h3>Gateway</h3>
-        ${infoRow('☤', 'Hermes Blink connects to Hermes Gateway API server for dev/private use. Public mode will use the fixed Blink relay.')}
-        <h3>Community</h3>
-        ${infoLink('Hermes docs', 'hermes-agent.nousresearch.com/docs', 'Gateway/API server docs and setup notes.')}
-        ${infoLink('Source code', 'github.com/s0xn1ck/hermes-blink-app', 'Setup, security policy and issue tracker.')}
+        <p class="info-intro">A private voice-and-display client for your self-hosted Hermes. The broad Hermes credential stays on your bridge host.</p>
+        <div class="info-list">
+          ${infoRow('☷', 'Settings', 'Control reply length, paging and the active Hermes session.')}
+          ${infoRow('◇', 'Diagnostics', 'Copy sanitized connection details from Debug. Tokens are never included.')}
+          ${infoLink('Hermes documentation', 'hermes-agent.nousresearch.com/docs', 'Gateway and API server reference.')}
+          ${infoLink('Source and issues', 'github.com/s0xn1ck/hermes-blink-app', 'Setup, security policy and issue tracker.')}
+        </div>
       </section>
     `
     modal.addEventListener('click', (event) => {
@@ -341,11 +350,10 @@ export class G2HermesApp {
   private renderComposer(): string {
     const runActive = ['queued', 'running', 'waiting_for_approval', 'stopping'].includes(this.runStatus)
     return `
-      <form id="prompt-form" class="composer">
+      <div class="composer voice-composer">
         <button id="composer-sessions" type="button" aria-label="Open sessions">▱</button>
-        <input name="prompt" aria-label="Message to Hermes" placeholder="${runActive ? 'Run in progress…' : 'Type a message'}" autocomplete="off" ${runActive ? 'disabled' : ''} />
-        <button type="submit" ${runActive ? 'disabled' : ''}>Send</button>
-      </form>
+        <button id="voice-toggle" class="voice-button ${this.voiceRecording ? 'recording' : ''}" type="button" ${runActive ? 'disabled' : ''}>${runActive ? 'Hermes is working…' : this.voiceRecording ? '● Listening · tap to send' : '◉ Tap glasses to speak'}</button>
+      </div>
       <pre id="status" class="status-log" role="status" aria-live="polite"></pre>
     `
   }
@@ -420,12 +428,55 @@ export class G2HermesApp {
       this.view = 'sessions'
       this.renderCurrentView()
     })
-    this.root.querySelector<HTMLFormElement>('#prompt-form')?.addEventListener('submit', async (event) => {
-      event.preventDefault()
-      const target = event.currentTarget as HTMLFormElement
-      const prompt = String(new FormData(target).get('prompt') ?? '').trim()
-      if (prompt) await this.withUiErrors(() => this.sendPrompt(prompt))
+    this.root.querySelector<HTMLButtonElement>('#voice-toggle')?.addEventListener('click', async () => {
+      await this.withUiErrors(() => this.toggleVoice())
     })
+  }
+
+  private captureAudio(pcm: Uint8Array): void {
+    if (!this.voiceRecording || pcm.byteLength === 0) return
+    this.voiceBytes += pcm.byteLength
+    if (this.voiceBytes > 1_000_000) {
+      void this.withUiErrors(() => this.stopVoiceAndSend())
+      return
+    }
+    this.voiceChunks.push(pcm.slice())
+  }
+
+  private async toggleVoice(): Promise<void> {
+    if (this.voiceRecording) await this.stopVoiceAndSend()
+    else await this.startVoice()
+  }
+
+  private async startVoice(): Promise<void> {
+    if (!this.client || !this.session) throw new Error('Connect Hermes before recording.')
+    this.voiceChunks = []
+    this.voiceBytes = 0
+    await this.bridge.startMicrophone()
+    this.voiceRecording = true
+    this.voiceTimeout = globalThis.setTimeout(() => {
+      void this.withUiErrors(() => this.stopVoiceAndSend())
+    }, 25_000)
+    this.renderCurrentView()
+    this.setStatus('Listening on the G2 microphones. Tap again to send.')
+    await this.show('Listening', 'Speak now. Tap again to transcribe and send.', 0)
+  }
+
+  private async stopVoiceAndSend(): Promise<void> {
+    if (!this.voiceRecording || !this.client) return
+    this.voiceRecording = false
+    if (this.voiceTimeout !== null) globalThis.clearTimeout(this.voiceTimeout)
+    this.voiceTimeout = null
+    await this.bridge.stopMicrophone()
+    const wav = pcm16ChunksToWav(this.voiceChunks)
+    this.voiceChunks = []
+    this.voiceBytes = 0
+    this.setStatus('Transcribing voice…')
+    await this.show('Transcribing', 'Turning your speech into a Hermes prompt…', 0)
+    const transcript = await this.client.transcribeAudio(wav)
+    this.setStatus(`You said: ${transcript}`)
+    await this.show('You said', transcript, 0)
+    await this.sendPrompt(transcript)
   }
 
   private wireRunControls(): void {
@@ -751,12 +802,12 @@ function section(label: string): string {
   return `<h2 class="section-title">${escapeHtml(label)}</h2>`
 }
 
-function infoRow(icon: string, text: string): string {
-  return `<div class="info-row"><span class="info-icon">${icon}</span><p>${escapeHtml(text)}</p></div>`
+function infoRow(icon: string, title: string, text: string): string {
+  return `<div class="info-row"><span class="info-icon">${icon}</span><div class="info-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(text)}</small></div></div>`
 }
 
 function infoLink(title: string, subtitle: string, body: string): string {
-  return `<div class="info-row linkish"><span class="info-icon">☤</span><p><strong>${escapeHtml(title)}</strong><small>${escapeHtml(subtitle)}</small>${escapeHtml(body)}</p><span class="arrow">→</span></div>`
+  return `<div class="info-row linkish"><span class="info-icon">↗</span><div class="info-copy"><strong>${escapeHtml(title)}</strong><small>${escapeHtml(subtitle)}</small><span>${escapeHtml(body)}</span></div><span class="arrow">→</span></div>`
 }
 
 function toggle(key: keyof BlinkSettings, icon: string, label: string, checked: boolean): string {
