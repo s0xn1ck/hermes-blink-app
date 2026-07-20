@@ -35,12 +35,13 @@ label { display: block; color: #777; margin: 16px 0; }
 .status-pill.disconnected::first-letter { color: #aaa; }
 .button-row { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
 .danger { background: #f8d7da; color: #b22; }
+.approval-action { max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; background: #f3f3f3; padding: 14px; border-radius: 10px; }
 .muted { color: #777; }
 .lens-card p:first-of-type { color: #111; background: #f3f3f3; padding: 16px; border-radius: 12px; }
 .composer { position: fixed; z-index: 20; left: 50%; bottom: 0; width: min(720px, calc(100% - 24px)); box-sizing: border-box; transform: translateX(-50%); display: grid; grid-template-columns: 64px 1fr 116px; gap: 12px; padding: 14px 20px 18px; background: #fff; border-radius: 18px 18px 0 0; box-shadow: 0 -2px 14px #0002; }
 .composer input { margin: 0; }
 .composer button { margin: 0; font-weight: 700; }
-.status-log { white-space: pre-wrap; background: #fff; color: #555; padding: 12px 16px; border-radius: 10px; min-height: 22px; }
+.status-log { white-space: pre-wrap; overflow: auto; max-height: 180px; background: #fff; color: #555; padding: 12px 16px; border-radius: 10px; min-height: 22px; }
 .search-row { display: grid; grid-template-columns: 1fr 78px; gap: 14px; }
 .search-row input { margin: 0; font-size: 1.35rem; }
 .empty-state { text-align: center; color: #8a8a8a; padding: 36px 8px; }

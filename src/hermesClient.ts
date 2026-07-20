@@ -85,7 +85,7 @@ export class HermesClient {
 
   async listSessions(): Promise<HermesSession[]> {
     const response = await this.request('/api/sessions?limit=50&source=api-server', {}, this.timeouts.listMs)
-    const body = await response.json()
+    const body = await this.readJson(response, this.timeouts.listMs)
     const sessions = Array.isArray(body) ? body : body.sessions ?? body.data ?? []
     return sessions.map((item: any) => {
       const session: HermesSession = {
@@ -106,7 +106,7 @@ export class HermesClient {
       method: 'POST',
       body: JSON.stringify({ title, model: BLINK_MODEL_NAME }),
     }, this.timeouts.listMs)
-    const body = await response.json()
+    const body = await this.readJson(response, this.timeouts.listMs)
     const session = body.session ?? body
     const sessionId = session?.id ?? session?.session_id
     if (sessionId === undefined || sessionId === null || String(sessionId).trim() === '') {
@@ -129,7 +129,7 @@ export class HermesClient {
         ...(instructions?.trim() ? { instructions: instructions.trim() } : {}),
       }),
     }, this.timeouts.runMs)
-    const body = await response.json()
+    const body = await this.readJson(response, this.timeouts.runMs)
     if (body?.run_id === undefined || body?.run_id === null || String(body.run_id).trim() === '') {
       throw new HermesApiError('Hermes returned a run without a usable run id')
     }
@@ -145,7 +145,7 @@ export class HermesClient {
     let buffer = ''
     try {
       while (true) {
-        const { done, value } = await reader.read()
+        const { done, value } = await this.readChunk(reader, this.timeouts.runMs, 'Hermes event stream')
         if (value) {
           buffer += decoder.decode(value, { stream: !done })
           const matches = [...buffer.matchAll(/\r?\n\r?\n/g)]
@@ -162,17 +162,33 @@ export class HermesClient {
       buffer += decoder.decode()
       for (const event of parseSseEvents(buffer)) yield event
     } finally {
+      await reader.cancel().catch(() => undefined)
       reader.releaseLock()
     }
   }
 
   async getRun(runId: string): Promise<HermesRunStatus> {
     const response = await this.request(`/v1/runs/${encodeURIComponent(runId)}`, {}, this.timeouts.listMs)
-    const body = await response.json()
+    const body = await this.readJson(response, this.timeouts.listMs)
     if (!body || typeof body !== 'object' || String(body.run_id ?? '') !== runId || typeof body.status !== 'string') {
       throw new HermesApiError('Hermes returned an invalid run status response')
     }
     return body as HermesRunStatus
+  }
+
+  async waitForRunState(
+    runId: string,
+    options: { maxAttempts?: number; pollMs?: number } = {},
+  ): Promise<HermesRunStatus> {
+    const maxAttempts = Math.max(1, options.maxAttempts ?? 150)
+    const pollMs = Math.max(0, options.pollMs ?? 2_000)
+    let current = await this.getRun(runId)
+    for (let attempt = 1; attempt < maxAttempts; attempt += 1) {
+      if (['completed', 'failed', 'cancelled', 'waiting_for_approval'].includes(current.status)) return current
+      if (pollMs > 0) await new Promise((resolve) => globalThis.setTimeout(resolve, pollMs))
+      current = await this.getRun(runId)
+    }
+    return current
   }
 
   async stopRun(runId: string): Promise<void> {
@@ -212,6 +228,52 @@ export class HermesClient {
       throw error
     } finally {
       globalThis.clearTimeout(timeout)
+    }
+  }
+
+  private async readJson(response: Response, timeoutMs: number): Promise<any> {
+    if (!response.body) throw new HermesApiError('Hermes returned an empty response body')
+    const reader = response.body.getReader()
+    const decoder = new TextDecoder()
+    let text = ''
+    try {
+      while (true) {
+        const { done, value } = await this.readChunk(reader, timeoutMs, 'Hermes response body')
+        if (value) {
+          text += decoder.decode(value, { stream: !done })
+          if (text.length > 1_000_000) throw new HermesApiError('Hermes response body exceeded 1 MB')
+        }
+        if (done) break
+      }
+      text += decoder.decode()
+      return JSON.parse(text)
+    } catch (error) {
+      if (error instanceof HermesApiError) throw error
+      throw new HermesApiError('Hermes returned invalid JSON')
+    } finally {
+      await reader.cancel().catch(() => undefined)
+      reader.releaseLock()
+    }
+  }
+
+  private async readChunk(
+    reader: ReadableStreamDefaultReader<Uint8Array>,
+    timeoutMs: number,
+    label: string,
+  ): Promise<ReadableStreamReadResult<Uint8Array>> {
+    let timeout: ReturnType<typeof globalThis.setTimeout> | undefined
+    try {
+      return await Promise.race([
+        reader.read(),
+        new Promise<never>((_, reject) => {
+          timeout = globalThis.setTimeout(
+            () => reject(new HermesApiError(`${label} timed out after ${Math.round(timeoutMs / 1000)}s`)),
+            timeoutMs,
+          )
+        }),
+      ])
+    } finally {
+      if (timeout !== undefined) globalThis.clearTimeout(timeout)
     }
   }
 

@@ -1,4 +1,4 @@
-import { HermesClient, type ApprovalChoice, type HermesRunEvent, type HermesRunStatus, type HermesSession } from './hermesClient'
+import { HermesApiError, HermesClient, type ApprovalChoice, type HermesRunEvent, type HermesRunStatus, type HermesSession } from './hermesClient'
 import {
   clearConfig,
   clearSettings,
@@ -13,7 +13,7 @@ import {
 } from './storage'
 import { buildDebugPayload } from './diagnostics'
 import { buildBlinkPrompt } from './prompt'
-import { chunkForG2, formatLensPage } from './text'
+import { chunkForG2, formatLensPage, tailForPhone } from './text'
 import type { G2Bridge, G2Event } from './g2Bridge'
 
 type DebugState = {
@@ -48,6 +48,8 @@ export class G2HermesApp {
   private runOutput = ''
   private lastDeltaRenderAt = 0
   private pendingApproval: HermesRunEvent | null = null
+  private approvalConfirmArmed = false
+  private connectionState: 'checking' | 'online' | 'offline' = 'offline'
   private view: AppView = 'home'
   private settingsTab: SettingsTab = 'display'
   private settings: BlinkSettings = loadSettings()
@@ -117,7 +119,7 @@ export class G2HermesApp {
       const form = new FormData(target)
       const candidate: HermesConfig = {
         baseUrl: normalizeBaseUrl(String(form.get('baseUrl') ?? '')),
-        apiKey: String(form.get('apiKey') ?? ''),
+        apiKey: String(form.get('apiKey') ?? '').trim(),
       }
       await this.connectDirect(candidate).catch((err) => this.renderConfigForm(String(err.message ?? err)))
     })
@@ -131,12 +133,15 @@ export class G2HermesApp {
     if (new URL(config.baseUrl).protocol !== 'https:') {
       throw new Error('Hermes Blink requires an HTTPS Gateway URL.')
     }
+    if (!config.apiKey) throw new Error('Enter the scoped Hermes Blink token.')
     this.config = config
     this.client = new HermesClient(config)
+    this.connectionState = 'checking'
     this.updateDebug({ hermes: 'checking health', lastRequest: 'GET /health' })
     await this.show('Connecting', 'Checking Hermes Gateway...', 0)
     const ok = await this.client.health()
     if (!ok) throw new Error('Hermes health check failed')
+    this.connectionState = 'online'
     this.config = saveConfig(config, window.localStorage, window.sessionStorage)
 
     await this.finishConnection(config.sessionId)
@@ -168,9 +173,10 @@ export class G2HermesApp {
   }
 
   private renderHomeView(): void {
+    const online = this.connectionState === 'online'
     this.root.innerHTML = this.shell(`
       <section class="card connect-card">
-        <button class="status-pill connected" type="button">● Connected · ${escapeHtml(this.shortHost())} <span>⌄</span></button>
+        <button id="retry-connection" class="status-pill ${online ? 'connected' : 'disconnected'}" type="button">● ${online ? `Connected · ${escapeHtml(this.shortHost())}` : 'Connection issue · tap to retry'} <span>⌄</span></button>
         <p class="muted">Active session</p>
         <h2>${escapeHtml(this.session?.title ?? this.session?.id ?? 'No session')}</h2>
         <div class="button-row">
@@ -209,13 +215,13 @@ export class G2HermesApp {
 
     this.root.innerHTML = this.shell(`
       <section class="card search-card">
-        <div class="search-row"><input id="session-search" placeholder="Search sessions..." /><button id="refresh-sessions" type="button">⌕</button></div>
+        <div class="search-row"><input id="session-search" aria-label="Search sessions" placeholder="Search sessions..." /><button id="refresh-sessions" type="button" aria-label="Refresh sessions" title="Refresh sessions">⌕</button></div>
       </section>
       ${this.client ? '' : '<p class="error banner">Connect to the Gateway to manage sessions</p>'}
       <section class="card">
         <h2 class="section-title">Current</h2>
         ${current}
-        <h2 class="section-title row-title">All sessions <button id="new-session" type="button">☑</button></h2>
+        <h2 class="section-title row-title">All sessions <button id="new-session" type="button" aria-label="Create new session" title="Create new session">☑</button></h2>
         <div id="session-list">${allSessions}</div>
       </section>
       ${this.renderDebugPanel()}
@@ -323,7 +329,7 @@ export class G2HermesApp {
         ${infoRow('☤', 'Hermes Blink connects to Hermes Gateway API server for dev/private use. Public mode will use the fixed Blink relay.')}
         <h3>Community</h3>
         ${infoLink('Hermes docs', 'hermes-agent.nousresearch.com/docs', 'Gateway/API server docs and setup notes.')}
-        ${infoLink('Source code', 'github.com/s0xn1ck/hermes-blink', 'Setup, security policy and issue tracker.')}
+        ${infoLink('Source code', 'github.com/s0xn1ck/hermes-blink-app', 'Setup, security policy and issue tracker.')}
       </section>
     `
     modal.addEventListener('click', (event) => {
@@ -348,6 +354,7 @@ export class G2HermesApp {
     if (this.runStatus === 'idle' && !this.currentRunId) return ''
     const stopVisible = ['queued', 'running', 'waiting_for_approval', 'stopping'].includes(this.runStatus)
     const approvalVisible = this.runStatus === 'waiting_for_approval'
+    const approvalAction = String(this.pendingApproval?.description ?? this.pendingApproval?.command ?? this.pendingApproval?.preview ?? 'No safe details provided. Deny unless you recognize this action.').slice(0, 5_000)
     return `
       <section class="card run-card">
         <h2>${approvalVisible ? 'Approval needed' : 'Run status'}</h2>
@@ -356,12 +363,12 @@ export class G2HermesApp {
         ${approvalVisible ? `
           <div class="approval-details">
             <p><strong>Tool:</strong> ${escapeHtml(String(this.pendingApproval?.tool ?? 'Unknown tool'))}</p>
-            <p><strong>Action:</strong> ${escapeHtml(String(this.pendingApproval?.description ?? this.pendingApproval?.command ?? this.pendingApproval?.preview ?? 'No safe details provided. Deny unless you recognize this action.').slice(0, 300))}</p>
+            <p><strong>Action:</strong></p><pre class="approval-action">${escapeHtml(approvalAction)}</pre>
             <p class="muted">Approval applies once to this request only.</p>
           </div>
           <div class="button-row approval-row">
             <button data-approval-choice="deny" class="danger" type="button">Deny</button>
-            <button data-approval-choice="once" type="button">Approve once</button>
+            <button data-approval-choice="once" type="button">${this.approvalConfirmArmed ? 'Confirm approve once' : 'Review & approve'}</button>
           </div>` : ''}
       </section>
     `
@@ -387,6 +394,10 @@ export class G2HermesApp {
   }
 
   private wireHomeEvents(): void {
+    this.root.querySelector<HTMLButtonElement>('#retry-connection')?.addEventListener('click', async () => {
+      if (!this.config) return
+      await this.withUiErrors(() => this.connectDirect(this.config!))
+    })
     this.root.querySelector<HTMLButtonElement>('#refresh-sessions')?.addEventListener('click', async () => {
       await this.withUiErrors(() => this.refreshSessions())
     })
@@ -433,10 +444,17 @@ export class G2HermesApp {
       button.addEventListener('click', async () => {
         if (!this.client || !this.currentRunId) return
         const choice = button.dataset.approvalChoice as ApprovalChoice
+        if (choice === 'once' && !this.approvalConfirmArmed) {
+          this.approvalConfirmArmed = true
+          this.setStatus('Review the full action, then tap Confirm approve once.')
+          this.renderCurrentView()
+          return
+        }
         await this.withUiErrors(async () => {
           this.updateDebug({ lastRequest: `POST /v1/runs/${this.currentRunId}/approval` })
           await this.client!.respondToApproval(this.currentRunId!, choice, String(this.pendingApproval?.approval_id ?? ''))
           this.pendingApproval = null
+          this.approvalConfirmArmed = false
           this.runStatus = 'running'
           this.setStatus(`Approval sent: ${choice}`)
           await this.show('Hermes', `Approval sent: ${choice}`, 0)
@@ -503,6 +521,7 @@ export class G2HermesApp {
     this.runOutput = ''
     this.lastDeltaRenderAt = 0
     this.pendingApproval = null
+    this.approvalConfirmArmed = false
     this.pages = chunkForG2('Starting Hermes run...')
     this.pageIndex = 0
     this.runStatus = 'queued'
@@ -517,24 +536,32 @@ export class G2HermesApp {
     this.renderCurrentView()
 
     let terminalEventSeen = false
-    for await (const event of this.client.streamRunEvents(run.run_id)) {
-      await this.applyRunEvent(event)
-      if (['run.completed', 'run.failed', 'run.cancelled'].includes(event.event)) {
-        terminalEventSeen = true
-        break
+    try {
+      for await (const event of this.client.streamRunEvents(run.run_id)) {
+        await this.applyRunEvent(event)
+        if (['run.completed', 'run.failed', 'run.cancelled'].includes(event.event)) {
+          terminalEventSeen = true
+          break
+        }
       }
+    } catch (error) {
+      this.updateDebug({ lastRequest: `Event stream interrupted: ${String(error instanceof Error ? error.message : error)}` })
     }
     if (!terminalEventSeen && this.currentRunId === run.run_id) {
       this.updateDebug({ lastRequest: `GET /v1/runs/${run.run_id}` })
-      const reconciled = await this.client.getRun(run.run_id)
+      this.setStatus('Connection interrupted. Following the run by status…')
+      await this.show('Hermes', 'Connection interrupted. Reconnecting…', 0)
+      const reconciled = await this.client.waitForRunState(run.run_id)
       if (reconciled.status === 'completed') {
         await this.applyRunEvent({ event: 'run.completed', run_id: run.run_id, output: reconciled.output })
       } else if (reconciled.status === 'failed') {
         await this.applyRunEvent({ event: 'run.failed', run_id: run.run_id, error: reconciled.error })
       } else if (reconciled.status === 'cancelled') {
         await this.applyRunEvent({ event: 'run.cancelled', run_id: run.run_id })
+      } else if (reconciled.status === 'waiting_for_approval') {
+        await this.applyRunEvent({ event: 'approval.request', run_id: run.run_id })
       } else {
-        throw new Error(`Hermes event stream disconnected while run is ${reconciled.status}. Reconnect and retry.`)
+        throw new Error(`Hermes run is still ${reconciled.status} after the reconnect window. Open the session before starting another run.`)
       }
     }
   }
@@ -545,7 +572,7 @@ export class G2HermesApp {
       this.runOutput = (this.runOutput + String(event.delta ?? '')).slice(0, MAX_OUTPUT_CHARS)
       this.pages = chunkForG2(this.runOutput || 'Hermes thinking...')
       this.pageIndex = Math.min(this.pageIndex, this.pages.length - 1)
-      this.setStatus(this.runOutput)
+      this.setStatus(tailForPhone(this.runOutput))
       const now = Date.now()
       if (now - this.lastDeltaRenderAt >= 125) {
         this.lastDeltaRenderAt = now
@@ -556,6 +583,7 @@ export class G2HermesApp {
     if (event.event === 'approval.request') {
       this.runStatus = 'waiting_for_approval'
       this.pendingApproval = event
+      this.approvalConfirmArmed = false
       this.pages = chunkForG2('Approval needed. Open phone to approve or deny.')
       this.pageIndex = 0
       this.setStatus('Approval needed')
@@ -577,7 +605,7 @@ export class G2HermesApp {
       this.pages = chunkForG2(output)
       this.pageIndex = 0
       await this.renderCurrentPage()
-      this.setStatus(output)
+      this.setStatus(tailForPhone(output))
       this.renderCurrentView()
       return
     }
@@ -612,7 +640,9 @@ export class G2HermesApp {
       await action()
     } catch (error) {
       const message = String(error instanceof Error ? error.message : error)
+      if (error instanceof HermesApiError || error instanceof TypeError) this.connectionState = 'offline'
       this.updateDebug({ lastRequest: message })
+      if (this.config && this.connectionState === 'offline') this.renderCurrentView()
       this.setStatus(message)
       this.pages = chunkForG2(message)
       this.pageIndex = 0

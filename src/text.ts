@@ -26,3 +26,8 @@ export function formatLensPage(title: string, body: string, page: number, total:
   const suffix = total > 1 ? `\n\n[${page + 1}/${total}] Tap next` : ''
   return `${title}\n\n${body}${suffix}`.slice(0, 1000)
 }
+
+export function tailForPhone(text: string, maxChars = 1_500): string {
+  if (text.length <= maxChars) return text
+  return `…\n${text.slice(-(maxChars - 2))}`
+}

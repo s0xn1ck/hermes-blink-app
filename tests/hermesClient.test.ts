@@ -69,6 +69,25 @@ describe('HermesClient', () => {
     await expect(client.getRun('run_1')).resolves.toMatchObject({ run_id: 'run_1', status: 'completed', output: 'done' })
   })
 
+  it('polls a disconnected active run until it reaches a resumable state', async () => {
+    const states = ['running', 'running', 'completed']
+    const client = new HermesClient({ baseUrl: 'https://h.example', apiKey: ['test', 'token'].join('-') }, mockFetch(() => {
+      const status = states.shift() ?? 'completed'
+      return Response.json({ run_id: 'run_1', status, ...(status === 'completed' ? { output: 'done' } : {}) })
+    }))
+
+    await expect(client.waitForRunState('run_1', { maxAttempts: 3, pollMs: 0 }))
+      .resolves.toMatchObject({ status: 'completed', output: 'done' })
+  })
+
+  it('returns waiting-for-approval instead of polling forever', async () => {
+    const client = new HermesClient({ baseUrl: 'https://h.example', apiKey: ['test', 'token'].join('-') }, mockFetch(() =>
+      Response.json({ run_id: 'run_1', status: 'waiting_for_approval' })))
+
+    await expect(client.waitForRunState('run_1', { maxAttempts: 3, pollMs: 0 }))
+      .resolves.toMatchObject({ status: 'waiting_for_approval' })
+  })
+
   it('keeps Blink in its own session lane on the main gateway', async () => {
     const seen: { listUrl?: string; createBody?: string } = {}
     const client = new HermesClient({ baseUrl: 'https://h.example', apiKey: 'secret' }, mockFetch((url, init) => {
@@ -104,6 +123,37 @@ describe('HermesClient', () => {
 
     await expect(client.health()).rejects.toBeInstanceOf(HermesApiError)
     await expect(client.health()).rejects.toThrow(/timed out/)
+  })
+
+  it('times out when response headers arrive but the JSON body stalls', async () => {
+    const stalled = new ReadableStream<Uint8Array>({ start() {} })
+    const client = new HermesClient(
+      { baseUrl: 'https://h.example', apiKey: ['test', 'token'].join('-') },
+      mockFetch(() => new Response(stalled, { status: 200 })),
+      { healthMs: 5, listMs: 5, chatMs: 5, runMs: 5 },
+    )
+
+    await expect(client.getRun('run_1')).rejects.toThrow(/body timed out/i)
+  })
+
+  it('times out and cancels a stalled SSE stream', async () => {
+    let cancelled = false
+    const stream = new ReadableStream<Uint8Array>({
+      start(controller) {
+        controller.enqueue(new TextEncoder().encode('data: {"event":"message.delta","delta":"hi"}\n\n'))
+      },
+      cancel() { cancelled = true },
+    })
+    const client = new HermesClient(
+      { baseUrl: 'https://h.example', apiKey: ['test', 'token'].join('-') },
+      mockFetch(() => new Response(stream, { status: 200 })),
+      { healthMs: 5, listMs: 5, chatMs: 5, runMs: 5 },
+    )
+
+    const events = client.streamRunEvents('run_1')
+    await expect(events.next()).resolves.toMatchObject({ value: { event: 'message.delta' } })
+    await expect(events.next()).rejects.toThrow(/stream timed out/i)
+    expect(cancelled).toBe(true)
   })
 })
 

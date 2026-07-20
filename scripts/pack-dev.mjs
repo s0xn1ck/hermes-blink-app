@@ -56,7 +56,8 @@ await mkdir(new URL('../.tmp', import.meta.url), { recursive: true })
 await writeFile(new URL('../.tmp/app.dev.generated.json', import.meta.url), `${JSON.stringify(app, null, 2)}\n`)
 console.log(`Wrote .tmp/app.dev.generated.json with network whitelist: ${origin}`)
 
-const pack = spawnSync('evenhub', ['pack', '.tmp/app.dev.generated.json', 'dist', '-o', 'hermes-blink-dev.ehpk'], {
+const packageOutput = process.env.HERMES_BLINK_PACKAGE_OUTPUT || `hermes-blink-dev-${Date.now()}.ehpk`
+const pack = spawnSync(process.execPath, ['node_modules/@evenrealities/evenhub-cli/main.js', 'pack', '.tmp/app.dev.generated.json', 'dist', '-o', packageOutput], {
   stdio: 'inherit',
   shell: false,
 })

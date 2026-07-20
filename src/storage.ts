@@ -19,7 +19,7 @@ const TOKEN_STORAGE_KEY = 'even-g2-hermes-session-token'
 const SETTINGS_KEY = 'hermes-blink-settings'
 
 export const defaultSettings: BlinkSettings = {
-  fastScroll: true,
+  fastScroll: false,
   activityStatus: true,
   thinkingSummaries: true,
   verbosity: 'normal',
